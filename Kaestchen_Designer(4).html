@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kästchen-Designer</title>
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f5f6f8;
+    color: #202124;
+  }
+
+  header {
+    background: #fff;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid #d9dce1;
+  }
+
+  h1 {
+    margin: 0 0 14px;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  label {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  input[type="number"] {
+    width: 104px;
+    height: 38px;
+    padding: 6px 10px;
+    border: 1px solid #b9bec7;
+    border-radius: 6px;
+    background: white;
+    font-size: 16px;
+  }
+
+  .size-input {
+    width: 92px !important;
+  }
+
+  button {
+    height: 38px;
+    padding: 0 16px;
+    border: 1px solid #b7bcc4;
+    border-radius: 6px;
+    background: #fff;
+    color: #202124;
+    font-size: 15px;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #f1f3f4;
+  }
+
+  #create {
+    background: #1677e8;
+    border-color: #1677e8;
+    color: white;
+    font-weight: 600;
+  }
+
+  #create:hover {
+    background: #1268cd;
+  }
+
+  .hint {
+    margin-top: 14px;
+    padding: 10px 14px;
+    border: 1px solid #9ec7f5;
+    border-radius: 6px;
+    background: #edf6ff;
+    color: #263746;
+    font-size: 15px;
+  }
+
+  .workspace {
+    margin: 16px;
+    border: 1px solid #d5d9df;
+    border-radius: 6px;
+    background: #fff;
+    overflow: auto;
+    height: calc(100vh - 190px);
+    min-height: 400px;
+  }
+
+  /* Spreadsheet-like grid */
+  #grid {
+    display: grid;
+    width: max-content;
+    min-width: max-content;
+    position: relative;
+  }
+
+  .header-cell,
+  .row-header {
+    background: #f8f9fa;
+    color: #202124;
+    font-weight: 600;
+    user-select: none;
+    border-right: 1px solid #d8dce2;
+    border-bottom: 1px solid #d8dce2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+  }
+
+  .corner {
+    background: #f8f9fa;
+    border-right: 1px solid #d8dce2;
+    border-bottom: 1px solid #d8dce2;
+  }
+
+  .grid-cell {
+    background: white;
+    border-right: 1px solid #dfe2e6;
+    border-bottom: 1px solid #dfe2e6;
+    cursor: crosshair;
+  }
+
+  .grid-cell.black {
+    background: #000;
+  }
+
+  .grid-cell:hover {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
+    z-index: 2;
+  }
+
+  .row-header,
+  .header-cell {
+    position: sticky;
+    z-index: 3;
+  }
+
+  .top-number {
+    top: 0;
+  }
+
+  .left-number {
+    left: 0;
+  }
+
+  .corner {
+    top: 0;
+    left: 0;
+    position: sticky;
+    z-index: 5;
+  }
+
+  .status {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #5f6368;
+  }
+
+  @media (max-width: 800px) {
+    .controls {
+      gap: 8px;
+    }
+
+    label {
+      font-size: 13px;
+    }
+
+    button {
+      padding: 0 10px;
+    }
+
+    .workspace {
+      margin: 10px;
+    }
+  }
+</style>
+</head>
+
+<body>
+<header>
+  <h1>Kästchen-Designer</h1>
+
+  <div class="controls">
+    <div class="control">
+      <label for="cols">Horizontal (Spalten):</label>
+      <input id="cols" type="number" min="1" max="1000" value="300">
+    </div>
+
+    <div class="control">
+      <label for="rows">Vertikal (Zeilen):</label>
+      <input id="rows" type="number" min="1" max="1000" value="200">
+    </div>
+
+    <div class="control">
+      <label for="size">Kästchengröße:</label>
+      <input id="size" class="size-input" type="number" min="8" max="50" value="12">
+      <span>px</span>
+    </div>
+
+    <button id="create">Raster erstellen</button>
+    <button id="clear">Alles löschen</button>
+    <button id="invert">Schwarz/Weiß umkehren</button>
+    <button id="export">Bild exportieren (PNG)</button>
+  </div>
+
+  <div class="hint">
+    <strong>ⓘ</strong>&nbsp;&nbsp;
+    Klicke auf ein Kästchen, um es schwarz zu färben. Klicke erneut, um es wieder weiß zu machen.
+  </div>
+
+  <div class="status" id="status"></div>
+</header>
+
+<div class="workspace" id="workspace">
+  <div id="grid"></div>
+</div>
+
+<script>
+let cols = 300;
+let rows = 200;
+let cellSize = 12;
+let cells = new Uint8Array(cols * rows);
+
+const grid = document.getElementById("grid");
+const workspace = document.getElementById("workspace");
+const colsInput = document.getElementById("cols");
+const rowsInput = document.getElementById("rows");
+const sizeInput = document.getElementById("size");
+const status = document.getElementById("status");
+
+function idx(x, y) {
+  return y * cols + x;
+}
+
+function buildGrid() {
+  cols = Math.max(1, Math.min(1000, parseInt(colsInput.value) || 300));
+  rows = Math.max(1, Math.min(1000, parseInt(rowsInput.value) || 200));
+  cellSize = Math.max(8, Math.min(50, parseInt(sizeInput.value) || 12));
+
+  colsInput.value = cols;
+  rowsInput.value = rows;
+  sizeInput.value = cellSize;
+
+  cells = new Uint8Array(cols * rows);
+
+  grid.innerHTML = "";
+
+  // Four-column spreadsheet structure:
+  // corner | column numbers
+  // row no | cells
+  grid.style.gridTemplateColumns = `48px repeat(${cols}, ${cellSize}px)`;
+  grid.style.gridTemplateRows = `34px repeat(${rows}, ${cellSize}px)`;
+
+  const fragment = document.createDocumentFragment();
+
+  const corner = document.createElement("div");
+  corner.className = "corner";
+  corner.style.width = "48px";
+  corner.style.height = "34px";
+  corner.style.gridColumn = "1";
+  corner.style.gridRow = "1";
+  fragment.appendChild(corner);
+
+  // Top numbers: 1 ... 50 ... 300.
+  // Every column is numbered, just like the reference image.
+  for (let x = 0; x < cols; x++) {
+    const h = document.createElement("div");
+    h.className = "header-cell top-number";
+    h.textContent = x + 1;
+    h.style.width = `${cellSize}px`;
+    h.style.height = "34px";
+    h.style.gridColumn = String(x + 2);
+    h.style.gridRow = "1";
+    fragment.appendChild(h);
+  }
+
+  for (let y = 0; y < rows; y++) {
+    const rh = document.createElement("div");
+    rh.className = "row-header left-number";
+    rh.textContent = y + 1;
+    rh.style.width = "48px";
+    rh.style.height = `${cellSize}px`;
+    rh.style.gridColumn = "1";
+    rh.style.gridRow = String(y + 2);
+    fragment.appendChild(rh);
+
+    for (let x = 0; x < cols; x++) {
+      const cell = document.createElement("div");
+      cell.className = "grid-cell";
+      cell.style.width = `${cellSize}px`;
+      cell.style.height = `${cellSize}px`;
+      cell.style.gridColumn = String(x + 2);
+      cell.style.gridRow = String(y + 2);
+      cell.dataset.x = x;
+      cell.dataset.y = y;
+
+      cell.addEventListener("click", () => {
+        const i = idx(x, y);
+        cells[i] = cells[i] ? 0 : 1;
+        cell.classList.toggle("black", !!cells[i]);
+        updateStatus();
+      });
+
+      fragment.appendChild(cell);
+    }
+  }
+
+  grid.appendChild(fragment);
+  updateStatus();
+}
+
+function updateStatus() {
+  let black = 0;
+  for (const value of cells) black += value;
+  status.textContent =
+    `${cols} × ${rows} = ${cols * rows} Kästchen | Schwarz: ${black}`;
+}
+
+document.getElementById("create").addEventListener("click", buildGrid);
+
+document.getElementById("clear").addEventListener("click", () => {
+  cells.fill(0);
+  document.querySelectorAll(".grid-cell.black").forEach(el => {
+    el.classList.remove("black");
+  });
+  updateStatus();
+});
+
+document.getElementById("invert").addEventListener("click", () => {
+  cells = Uint8Array.from(cells, value => value ? 0 : 1);
+
+  document.querySelectorAll(".grid-cell").forEach((cell) => {
+    const x = Number(cell.dataset.x);
+    const y = Number(cell.dataset.y);
+    cell.classList.toggle("black", !!cells[idx(x, y)]);
+  });
+
+  updateStatus();
+});
+
+// Mouse painting: hold left mouse button and paint several cells.
+let painting = false;
+let paintValue = 1;
+
+grid.addEventListener("mousedown", (event) => {
+  const cell = event.target.closest(".grid-cell");
+  if (!cell) return;
+
+  event.preventDefault();
+
+  const x = Number(cell.dataset.x);
+  const y = Number(cell.dataset.y);
+  paintValue = cells[idx(x, y)] ? 0 : 1;
+
+  cells[idx(x, y)] = paintValue;
+  cell.classList.toggle("black", !!paintValue);
+  painting = true;
+  updateStatus();
+});
+
+grid.addEventListener("mouseover", (event) => {
+  if (!painting) return;
+
+  const cell = event.target.closest(".grid-cell");
+  if (!cell) return;
+
+  const x = Number(cell.dataset.x);
+  const y = Number(cell.dataset.y);
+  cells[idx(x, y)] = paintValue;
+  cell.classList.toggle("black", !!paintValue);
+  updateStatus();
+});
+
+window.addEventListener("mouseup", () => {
+  painting = false;
+});
+
+// Export only the actual pattern, without row/column labels.
+document.getElementById("export").addEventListener("click", () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = cols * cellSize;
+  canvas.height = rows * cellSize;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#000";
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (cells[idx(x, y)]) {
+        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      }
+    }
+  }
+
+  const link = document.createElement("a");
+  link.download = `kaestchen-muster-${cols}x${rows}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+});
+
+buildGrid();
+</script>
+</body>
+</html>
