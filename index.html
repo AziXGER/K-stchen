@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=0.5, user-scalable=yes, viewport-fit=cover">
 <title>Kästchen-Designer</title>
 <style>
 *{box-sizing:border-box}
@@ -19,9 +19,10 @@ button:hover{background:#f1f3f4}
 #create{background:#1677e8;border-color:#1677e8;color:#fff;font-weight:600}
 .hint{margin-top:12px;padding:9px 12px;border:1px solid #9ec7f5;border-radius:6px;background:#edf6ff;font-size:14px}
 .status{margin-top:7px;font-size:13px;color:#5f6368}
-.workspace{margin:16px;border:1px solid #d5d9df;border-radius:6px;background:#fff;overflow:auto;height:calc(100vh - 190px);min-height:400px;-webkit-overflow-scrolling:touch}
+.zoom-label{font-size:13px;color:#5f6368}
+.workspace{margin:16px;border:1px solid #d5d9df;border-radius:6px;background:#fff;overflow:auto;height:calc(100vh - 190px);min-height:400px;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y pinch-zoom}
 #board{position:relative;width:max-content;height:max-content}
-canvas{display:block;touch-action:none}
+canvas{display:block;touch-action:pan-x pan-y pinch-zoom}
 </style>
 </head>
 <body>
@@ -34,6 +35,9 @@ canvas{display:block;touch-action:none}
 <button id="create">Raster erstellen</button>
 <button id="clear">Alles löschen</button>
 <button id="invert">Schwarz/Weiß umkehren</button>
+<button id="zoomOut">−</button>
+<button id="zoomReset">100%</button>
+<button id="zoomIn">+</button>
 <button id="export">Bild exportieren (PNG)</button>
 </div>
 <div class="hint"><strong>ⓘ</strong>&nbsp;&nbsp;Klicke auf ein Kästchen, um es schwarz zu färben. Klicke erneut, um es wieder weiß zu machen. Mit gedrückter Maustaste/Finger kannst du mehrere Kästchen markieren.</div>
@@ -68,6 +72,7 @@ function resizeCanvas(){
   canvas.height=LABEL_H+rows*cellSize;
   canvas.style.width=canvas.width+"px";
   canvas.style.height=canvas.height+"px";
+  applyZoom();
 }
 
 function draw(){
@@ -142,6 +147,22 @@ function updateStatus(){
   statusEl.textContent=`${cols} × ${rows} = ${cols*rows} Kästchen | Schwarz: ${black}`;
 }
 
+let zoomFactor = 1;
+
+function applyZoom() {
+  // Zoom the actual grid without changing the logical number of cells.
+  const oldWidth = canvas.width;
+  const oldHeight = canvas.height;
+  canvas.style.width = Math.round(oldWidth * zoomFactor) + "px";
+  canvas.style.height = Math.round(oldHeight * zoomFactor) + "px";
+  document.getElementById("zoomReset").textContent = Math.round(zoomFactor * 100) + "%";
+}
+
+function setZoom(value) {
+  zoomFactor = Math.max(0.5, Math.min(3, value));
+  applyZoom();
+}
+
 function buildGrid(){
   cols=Math.max(1,Math.min(1000,parseInt(colsInput.value)||300));
   rows=Math.max(1,Math.min(1000,parseInt(rowsInput.value)||200));
@@ -180,7 +201,6 @@ function paint(e){
 canvas.addEventListener("pointerdown",e=>{
   const p=cellFromEvent(e);
   if(!p)return;
-  e.preventDefault();
   canvas.setPointerCapture?.(e.pointerId);
   const i=idx(p.x,p.y);
   paintMode=cells[i]?0:1;
@@ -239,6 +259,10 @@ document.getElementById("export").addEventListener("click",()=>{
   a.href=out.toDataURL("image/png");
   a.click();
 });
+
+document.getElementById("zoomOut").addEventListener("click", () => setZoom(zoomFactor - 0.25));
+document.getElementById("zoomIn").addEventListener("click", () => setZoom(zoomFactor + 0.25));
+document.getElementById("zoomReset").addEventListener("click", () => setZoom(1));
 
 buildGrid();
 </script>
