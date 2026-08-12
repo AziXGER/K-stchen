@@ -20,10 +20,10 @@ button:hover{background:#f1f3f4}
 .hint{margin-top:12px;padding:9px 12px;border:1px solid #9ec7f5;border-radius:6px;background:#edf6ff;font-size:14px}
 .status{margin-top:7px;font-size:13px;color:#5f6368}
 .zoom-label{font-size:13px;color:#5f6368}
-.workspace{margin:16px;border:1px solid #d5d9df;border-radius:6px;background:#fff;overflow:auto;height:calc(100vh - 190px);min-height:400px;-webkit-overflow-scrolling:touch;touch-action:none}
+.workspace{margin:16px;border:1px solid #d5d9df;border-radius:6px;background:#fff;overflow:auto;height:calc(100vh - 190px);min-height:400px;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
 #board{position:relative;width:max-content;height:max-content}
-#canvas{transform-origin:top left}
-canvas{display:block;touch-action:none;-webkit-user-select:none;user-select:none}
+#canvas{transform-origin:top left;display:block}
+canvas{display:block;touch-action:pan-x pan-y;-webkit-user-select:none;user-select:none}
 </style>
 </head>
 <body>
@@ -177,9 +177,9 @@ function buildGrid(){
   colsInput.value=cols;rowsInput.value=rows;sizeInput.value=cellSize;
   cells=new Uint8Array(cols*rows);
   resizeCanvas();
-  applyZoom();
   dirty=true;
   draw();
+  applyZoom();
 }
 
 function cellFromEvent(e){
@@ -208,21 +208,34 @@ function paint(e){
 
 let activePointers = new Set();
 
+function touchDistance() {
+  const p = [...touchPoints.values()];
+  if (p.length < 2) return 0;
+  return Math.hypot(p[0].clientX - p[1].clientX,
+                    p[0].clientY - p[1].clientY);
+}
+
 canvas.addEventListener("pointerdown", e => {
   activePointers.add(e.pointerId);
 
-  // Zwei Finger: Safari darf pinch-zoomen. Niemals zeichnen.
-  if (e.pointerType === "touch" && activePointers.size > 1) {
-    drawing = false;
-    return;
+  if (e.pointerType === "touch") {
+    touchPoints.set(e.pointerId, {clientX:e.clientX, clientY:e.clientY});
+
+    // Two fingers: zoom the editor, never paint.
+    if (touchPoints.size === 2) {
+      drawing = false;
+      pinchStartDistance = touchDistance();
+      pinchStartZoom = editorZoom;
+      return;
+    }
   }
+
+  if (e.pointerType === "mouse") e.preventDefault();
+
+  if (e.pointerType === "touch" && touchPoints.size > 1) return;
 
   const p = cellFromEvent(e);
   if (!p) return;
-
-  // Bei Touch keine preventDefault-Aufrufe: Safari braucht die
-  // Pointer-Ereignisse für das native Pinch-Zoom.
-  if (e.pointerType === "mouse") e.preventDefault();
 
   const i = idx(p.x, p.y);
   paintMode = cells[i] ? 0 : 1;
@@ -233,24 +246,35 @@ canvas.addEventListener("pointerdown", e => {
 });
 
 canvas.addEventListener("pointermove", e => {
-  if (e.pointerType === "touch" && activePointers.size > 1) {
-    drawing = false;
-    return;
+  if (e.pointerType === "touch") {
+    touchPoints.set(e.pointerId, {clientX:e.clientX, clientY:e.clientY});
+
+    if (touchPoints.size >= 2) {
+      drawing = false;
+      const d = touchDistance();
+      if (pinchStartDistance > 0 && d > 0) {
+        setZoom(pinchStartZoom * d / pinchStartDistance);
+      }
+      return;
+    }
   }
 
   if (!drawing) return;
-
   if (e.pointerType === "mouse") e.preventDefault();
   paint(e);
 });
 
 function endPointer(e) {
   activePointers.delete(e.pointerId);
+  if (e.pointerType === "touch") touchPoints.delete(e.pointerId);
+
+  if (touchPoints.size < 2) pinchStartDistance = 0;
 
   if (activePointers.size === 0) {
     drawing = false;
     dirty = true;
     draw();
+    applyZoom();
   }
 }
 
@@ -258,6 +282,16 @@ canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("pointerleave", e => {
   if (e.pointerType === "mouse") drawing = false;
+});
+
+document.getElementById("zoomOut").addEventListener("click", () => {
+  setZoom(editorZoom - 0.25);
+});
+document.getElementById("zoomIn").addEventListener("click", () => {
+  setZoom(editorZoom + 0.25);
+});
+document.getElementById("zoomReset").addEventListener("click", () => {
+  setZoom(1);
 });
 
 document.getElementById("create").addEventListener("click",buildGrid);
@@ -294,11 +328,9 @@ document.getElementById("export").addEventListener("click",()=>{
   a.click();
 });
 
-document.getElementById("zoomOut").addEventListener("click", () => setZoom(zoomFactor - 0.25));
-document.getElementById("zoomIn").addEventListener("click", () => setZoom(zoomFactor + 0.25));
-document.getElementById("zoomReset").addEventListener("click", () => setZoom(1));
 
 buildGrid();
+setZoom(1);
 </script>
 </body>
 </html>
