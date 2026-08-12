@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=0.5, user-scalable=yes, viewport-fit=cover">
+<title>Kästchen-Designer</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f5f6f8;color:#202124}
+header{background:#fff;padding:14px 16px 12px;border-bottom:1px solid #d9dce1}
+h1{margin:0 0 14px;font-size:24px}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.control{display:flex;align-items:center;gap:7px}
+label{font-size:14px;font-weight:600}
+input[type=number]{width:95px;height:36px;padding:5px 9px;border:1px solid #b9bec7;border-radius:6px;font-size:15px}
+.size-input{width:80px!important}
+button{height:36px;padding:0 13px;border:1px solid #b7bcc4;border-radius:6px;background:#fff;font-size:14px;cursor:pointer}
+button:hover{background:#f1f3f4}
+#create{background:#1677e8;border-color:#1677e8;color:#fff;font-weight:600}
+.hint{margin-top:12px;padding:9px 12px;border:1px solid #9ec7f5;border-radius:6px;background:#edf6ff;font-size:14px}
+.status{margin-top:7px;font-size:13px;color:#5f6368}
+.zoom-label{font-size:13px;color:#5f6368}
+.workspace{margin:16px;border:1px solid #d5d9df;border-radius:6px;background:#fff;overflow:auto;height:calc(100vh - 190px);min-height:400px;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y pinch-zoom}
+#board{position:relative;width:max-content;height:max-content}
+canvas{display:block;touch-action:pan-x pan-y pinch-zoom}
+</style>
+</head>
+<body>
+<header>
+<h1>Kästchen-Designer</h1>
+<div class="controls">
+<div class="control"><label for="cols">Horizontal (Spalten):</label><input id="cols" type="number" min="1" max="1000" value="300"></div>
+<div class="control"><label for="rows">Vertikal (Zeilen):</label><input id="rows" type="number" min="1" max="1000" value="200"></div>
+<div class="control"><label for="size">Kästchengröße:</label><input id="size" class="size-input" type="number" min="8" max="50" value="12"><span>px</span></div>
+<button id="create">Raster erstellen</button>
+<button id="clear">Alles löschen</button>
+<button id="invert">Schwarz/Weiß umkehren</button>
+<button id="zoomOut">−</button>
+<button id="zoomReset">100%</button>
+<button id="zoomIn">+</button>
+<button id="export">Bild exportieren (PNG)</button>
+</div>
+<div class="hint"><strong>ⓘ</strong>&nbsp;&nbsp;Klicke auf ein Kästchen, um es schwarz zu färben. Klicke erneut, um es wieder weiß zu machen. Mit gedrückter Maustaste/Finger kannst du mehrere Kästchen markieren.</div>
+<div class="status" id="status"></div>
+</header>
+
+<div class="workspace" id="workspace">
+  <div id="board"><canvas id="canvas"></canvas></div>
+</div>
+
+<script>
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d",{alpha:false});
+const colsInput=document.getElementById("cols");
+const rowsInput=document.getElementById("rows");
+const sizeInput=document.getElementById("size");
+const statusEl=document.getElementById("status");
+
+let cols=300,rows=200,cellSize=12;
+let cells=new Uint8Array(cols*rows);
+let dirty=true;
+let paintMode=1;
+let drawing=false;
+let lastX=-1,lastY=-1;
+
+const LABEL_W=48,LABEL_H=34;
+
+function idx(x,y){return y*cols+x}
+
+function resizeCanvas(){
+  canvas.width=LABEL_W+cols*cellSize;
+  canvas.height=LABEL_H+rows*cellSize;
+  canvas.style.width=canvas.width+"px";
+  canvas.style.height=canvas.height+"px";
+  applyZoom();
+}
+
+function draw(){
+  if(!dirty)return;
+  dirty=false;
+
+  const w=canvas.width,h=canvas.height;
+  ctx.fillStyle="#fff";
+  ctx.fillRect(0,0,w,h);
+
+  // Header backgrounds
+  ctx.fillStyle="#f8f9fa";
+  ctx.fillRect(0,0,w,LABEL_H);
+  ctx.fillRect(0,0,LABEL_W,h);
+
+  // Black cells only
+  ctx.fillStyle="#000";
+  for(let y=0;y<rows;y++){
+    let base=y*cols;
+    for(let x=0;x<cols;x++){
+      if(cells[base+x]) ctx.fillRect(LABEL_W+x*cellSize,LABEL_H+y*cellSize,cellSize,cellSize);
+    }
+  }
+
+  // Grid lines
+  ctx.beginPath();
+  ctx.strokeStyle="#dfe2e6";
+  ctx.lineWidth=1;
+
+  for(let x=0;x<=cols;x++){
+    let px=LABEL_W+x*cellSize+0.5;
+    ctx.moveTo(px,LABEL_H);
+    ctx.lineTo(px,h);
+  }
+  for(let y=0;y<=rows;y++){
+    let py=LABEL_H+y*cellSize+0.5;
+    ctx.moveTo(LABEL_W,py);
+    ctx.lineTo(w,py);
+  }
+  // Header separator lines
+  ctx.moveTo(0,LABEL_H+0.5);ctx.lineTo(w,LABEL_H+0.5);
+  ctx.moveTo(LABEL_W+0.5,0);ctx.lineTo(LABEL_W+0.5,h);
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle="#202124";
+  ctx.font="600 13px Arial";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+
+  // Only draw labels that fit. With very small cells, every label still exists
+  // but is kept compact, matching the spreadsheet-like reference.
+  for(let x=0;x<cols;x++){
+    ctx.fillText(String(x+1),LABEL_W+x*cellSize+cellSize/2,LABEL_H/2);
+  }
+  for(let y=0;y<rows;y++){
+    ctx.fillText(String(y+1),LABEL_W/2,LABEL_H+y*cellSize+cellSize/2);
+  }
+
+  updateStatus();
+}
+
+function requestDraw(){
+  if(dirty)return;
+  dirty=true;
+  requestAnimationFrame(draw);
+}
+
+function updateStatus(){
+  let black=0;
+  for(let i=0;i<cells.length;i++)black+=cells[i];
+  statusEl.textContent=`${cols} × ${rows} = ${cols*rows} Kästchen | Schwarz: ${black}`;
+}
+
+let zoomFactor = 1;
+
+function applyZoom() {
+  // Zoom the actual grid without changing the logical number of cells.
+  const oldWidth = canvas.width;
+  const oldHeight = canvas.height;
+  canvas.style.width = Math.round(oldWidth * zoomFactor) + "px";
+  canvas.style.height = Math.round(oldHeight * zoomFactor) + "px";
+  document.getElementById("zoomReset").textContent = Math.round(zoomFactor * 100) + "%";
+}
+
+function setZoom(value) {
+  zoomFactor = Math.max(0.5, Math.min(3, value));
+  applyZoom();
+}
+
+function buildGrid(){
+  cols=Math.max(1,Math.min(1000,parseInt(colsInput.value)||300));
+  rows=Math.max(1,Math.min(1000,parseInt(rowsInput.value)||200));
+  cellSize=Math.max(8,Math.min(50,parseInt(sizeInput.value)||12));
+  colsInput.value=cols;rowsInput.value=rows;sizeInput.value=cellSize;
+  cells=new Uint8Array(cols*rows);
+  resizeCanvas();
+  dirty=true;
+  draw();
+}
+
+function cellFromEvent(e){
+  const rect=canvas.getBoundingClientRect();
+  const scaleX=canvas.width/rect.width;
+  const scaleY=canvas.height/rect.height;
+  const px=(e.clientX-rect.left)*scaleX-LABEL_W;
+  const py=(e.clientY-rect.top)*scaleY-LABEL_H;
+  const x=Math.floor(px/cellSize);
+  const y=Math.floor(py/cellSize);
+  if(x<0||x>=cols||y<0||y>=rows)return null;
+  return{x,y};
+}
+
+function paint(e){
+  const p=cellFromEvent(e);
+  if(!p)return;
+  const {x,y}=p;
+  const i=idx(x,y);
+  if(cells[i]!==paintMode){
+    cells[i]=paintMode;
+    requestDraw();
+  }
+  lastX=x;lastY=y;
+}
+
+canvas.addEventListener("pointerdown",e=>{
+  const p=cellFromEvent(e);
+  if(!p)return;
+  canvas.setPointerCapture?.(e.pointerId);
+  const i=idx(p.x,p.y);
+  paintMode=cells[i]?0:1;
+  drawing=true;
+  lastX=-1;lastY=-1;
+  paint(e);
+});
+
+canvas.addEventListener("pointermove",e=>{
+  if(!drawing)return;
+  e.preventDefault();
+  paint(e);
+});
+
+canvas.addEventListener("pointerup",e=>{
+  drawing=false;
+  canvas.releasePointerCapture?.(e.pointerId);
+  dirty=true;
+  draw();
+});
+
+canvas.addEventListener("pointercancel",()=>{
+  drawing=false;
+});
+
+document.getElementById("create").addEventListener("click",buildGrid);
+
+document.getElementById("clear").addEventListener("click",()=>{
+  cells.fill(0);
+  dirty=true;
+  draw();
+});
+
+document.getElementById("invert").addEventListener("click",()=>{
+  for(let i=0;i<cells.length;i++)cells[i]=cells[i]?0:1;
+  dirty=true;
+  draw();
+});
+
+document.getElementById("export").addEventListener("click",()=>{
+  const out=document.createElement("canvas");
+  out.width=cols*cellSize;
+  out.height=rows*cellSize;
+  const o=out.getContext("2d");
+  o.fillStyle="#fff";
+  o.fillRect(0,0,out.width,out.height);
+  o.fillStyle="#000";
+  for(let y=0;y<rows;y++){
+    let base=y*cols;
+    for(let x=0;x<cols;x++){
+      if(cells[base+x])o.fillRect(x*cellSize,y*cellSize,cellSize,cellSize);
+    }
+  }
+  const a=document.createElement("a");
+  a.download=`kaestchen-muster-${cols}x${rows}.png`;
+  a.href=out.toDataURL("image/png");
+  a.click();
+});
+
+document.getElementById("zoomOut").addEventListener("click", () => setZoom(zoomFactor - 0.25));
+document.getElementById("zoomIn").addEventListener("click", () => setZoom(zoomFactor + 0.25));
+document.getElementById("zoomReset").addEventListener("click", () => setZoom(1));
+
+buildGrid();
+</script>
+</body>
+</html>
