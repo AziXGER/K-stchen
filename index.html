@@ -126,10 +126,16 @@ function draw(){
   // Only draw labels that fit. With very small cells, every label still exists
   // but is kept compact, matching the spreadsheet-like reference.
   for(let x=0;x<cols;x++){
-    ctx.fillText(String(x+1),LABEL_W+x*cellSize+cellSize/2,LABEL_H/2);
+    const number = x + 1;
+    if(number % 5 === 0){
+      ctx.fillText(String(number),LABEL_W+x*cellSize+cellSize/2,LABEL_H/2);
+    }
   }
   for(let y=0;y<rows;y++){
-    ctx.fillText(String(y+1),LABEL_W/2,LABEL_H+y*cellSize+cellSize/2);
+    const number = y + 1;
+    if(number % 5 === 0){
+      ctx.fillText(String(number),LABEL_W/2,LABEL_H+y*cellSize+cellSize/2);
+    }
   }
 
   updateStatus();
